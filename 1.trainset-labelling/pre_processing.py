@@ -107,12 +107,6 @@ def split_image(img, filename, output_folder):
     save_image(img_4, os.path.join(output_folder, filename_no_ext + "_patch_4.png"))
 
 def process_img(img, filename, output_folder, pit_id, localizer):
-    roi = localizer.localize(img)
-    img = img[roi[0]:roi[2],roi[1]:roi[3]]
-    split_image(img, filename, output_folder)
-    return
-
-
     if pit_id == 1:
         img = img[:, 50:-50, :]
         split_image(img, filename, output_folder)
