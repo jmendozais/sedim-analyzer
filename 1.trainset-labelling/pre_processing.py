@@ -4,6 +4,84 @@ import subprocess
 import os, sys
 import cv2
 
+from PIL import Image
+from skimage.color import rgb2gray
+from skimage.filters.rank import entropy
+from skimage.morphology import disk, opening
+from skimage.filters import threshold_otsu, threshold_minimum
+from scipy import ndimage as ndi
+from skimage.measure import label, regionprops
+from skimage.transform import resize
+import time
+
+class SampleTemplate:
+    def __init__(self):
+        self.roi = None
+        self.shape = None
+        
+class ROILocalizer:
+    def __init__(self):
+        self.templates = []
+        
+    def verify_membership(self, img, template):
+        # TODO: Implement verification by histograms. 
+	#	There are images with the same shape but different ROI localization.
+        return True
+    
+    def __localize(self, image, noise_segments_percent=0.05, bridge_width=9):
+        '''
+        Return: Bounding box of the ROI in the format (tl_x, tl_y, br_x, br_y). tl stands for the top left corner,
+        br stands for the botton right corner
+        '''
+        factor = 1
+        if image.shape[0] > 1200:
+            factor = image.shape[0]/1200.0
+            new_size = (int(image.shape[0]/factor), int(image.shape[1]/factor))
+            image = resize(image, new_size, anti_aliasing=True)
+            
+        gray_image = rgb2gray(image)
+        gray_image = np.array(gray_image * 256).astype(np.uint8)
+
+        # Perform binary segmentation based on entropy
+        entropy_image = entropy(gray_image, disk(5))
+        thresh = threshold_otsu(entropy_image)
+        binary = entropy_image > thresh
+        
+        # Remove bridges
+        binary = opening(binary, disk(bridge_width//2))
+
+        # Remove small objects
+        label_objects, nb_labels = ndi.label(binary)
+        sizes = np.bincount(label_objects.ravel())
+        h, w, _ = image.shape
+        mask_sizes = sizes > h*w*noise_segments_percent
+        mask_sizes[0] = 0
+        segments_cleaned = mask_sizes[label_objects].astype(np.int)
+
+        # Find bounding box of the ROI and scaling to the original size
+        props = regionprops(segments_cleaned)
+        roi = props[0].bbox
+        roi = (int(roi[0]*factor), int(roi[1]*factor), int(roi[2]*factor), int(roi[3]*factor))
+        
+        return roi 
+
+    def localize(self, img):
+        roi = None
+        for template in self.templates:
+            if img.shape == template.shape:
+                if self.verify_membership(img, template):
+                    roi = template.roi
+                    shape = template.shape
+        
+        if roi == None:
+            roi = self.__localize(img)
+            
+            template = SampleTemplate()
+            template.roi = roi
+            template.shape = img.shape
+            self.templates.append(template)
+        return roi
+
 def load_image(filename) :
     return cv2.imread(filename)
 
@@ -28,7 +106,13 @@ def split_image(img, filename, output_folder):
     img_4 = img[heigth*3:,:,:]
     save_image(img_4, os.path.join(output_folder, filename_no_ext + "_patch_4.png"))
 
-def process_img(img, filename, output_folder, pit_id):
+def process_img(img, filename, output_folder, pit_id, localizer):
+    roi = localizer.localize(img)
+    img = img[roi[0]:roi[2],roi[1]:roi[3]]
+    split_image(img, filename, output_folder)
+    return
+
+
     if pit_id == 1:
         img = img[:, 50:-50, :]
         split_image(img, filename, output_folder)
@@ -59,6 +143,10 @@ def process_img(img, filename, output_folder, pit_id):
     elif pit_id == 10:
         img = img[80:2062, 472:1076, :]
         split_image(img, filename, output_folder)
+    else:
+        roi = localizer.localize(img)
+        img = img[roi[0]:roi[2],roi[1]:roi[3]]
+        split_image(img, filename, output_folder)
 
 #===============#
 # main function
@@ -86,6 +174,7 @@ if __name__ == "__main__":
 
     # process each image
     n_imgs_per_pit = {}
+    localizer = ROILocalizer()
     for i, file in files_zip:
         # split the filename
         basename = os.path.basename(file)
@@ -103,7 +192,7 @@ if __name__ == "__main__":
         
         # apply a different procedure according to the number of pit
         print("Processing image {}/{} ...\r".format(i, len(files)), end="")
-        process_img(img, file, output_folder, pit_id)
+        process_img(img, file, output_folder, pit_id, localizer)
     # print("Processing image {}/{} ...".format(len(files)+1, len(files)+1))
     print()
 
