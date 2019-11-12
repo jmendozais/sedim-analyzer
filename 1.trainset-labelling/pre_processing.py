@@ -18,33 +18,49 @@ class SampleTemplate:
     def __init__(self):
         self.roi = None
         self.shape = None
+        self.descriptor = None
         
 class ROILocalizer:
     def __init__(self):
         self.templates = []
-        
-    def verify_membership(self, img, template):
-        # TODO: Implement verification by histograms. 
-	#	There are images with the same shape but different ROI localization.
-        return True
+        self.dists = [] 
     
-    def __localize(self, image, noise_segments_percent=0.05, bridge_width=9):
+    def compute_descriptor(self, image, roi):
+        mean_cols = np.mean(image, axis=(0, 2))
+        mean_rows = np.mean(image, axis=(1, 2))
+        descriptor = np.concatenate((mean_cols[:roi[1]], mean_cols[roi[3]:], mean_rows[:roi[0]], mean_rows[roi[2]:]))
+        return descriptor 
+    
+    def verify_membership(self, image, template):
+        if image.shape == template.shape:
+            roi_w =  template.roi[3] - template.roi[1]
+            descriptor = self.compute_descriptor(image, template.roi)
+            dist_mean = np.mean(np.abs(descriptor - template.descriptor)) 
+            self.dists.append(dist_mean)
+            return dist_mean < 3
+        return False
+    
+    def __localize(self, image, noise_segments_percent=0.05, bridge_width=15):
         '''
         Return: Bounding box of the ROI in the format (tl_x, tl_y, br_x, br_y). tl stands for the top left corner,
         br stands for the botton right corner
         '''
         factor = 1
-        if image.shape[0] > 1200:
-            factor = image.shape[0]/1200.0
+        target_shape = 800
+        if image.shape[0] > target_shape:
+            factor = image.shape[0]/target_shape
             new_size = (int(image.shape[0]/factor), int(image.shape[1]/factor))
             image = resize(image, new_size, anti_aliasing=True)
             
         gray_image = rgb2gray(image)
         gray_image = np.array(gray_image * 256).astype(np.uint8)
 
-        # Perform binary segmentation based on entropy
-        entropy_image = entropy(gray_image, disk(5))
-        thresh = threshold_otsu(entropy_image)
+        # Perform binary segmentation based on entropy if needed
+        entropy_image = entropy(gray_image, disk(4))
+        if np.std(entropy_image) > 1.0:
+            thresh = threshold_otsu(entropy_image)
+        else:
+            thresh = 0.0
         binary = entropy_image > thresh
         
         # Remove bridges
@@ -68,20 +84,21 @@ class ROILocalizer:
     def localize(self, img):
         roi = None
         for template in self.templates:
-            if img.shape == template.shape:
-                if self.verify_membership(img, template):
-                    roi = template.roi
-                    shape = template.shape
+            if self.verify_membership(img, template):
+                roi = template.roi
+                shape = template.shape
+                break
         
         if roi == None:
             roi = self.__localize(img)
-            
+
             template = SampleTemplate()
             template.roi = roi
             template.shape = img.shape
+            template.descriptor = self.compute_descriptor(img, roi)
             self.templates.append(template)
         return roi
-
+     
 def load_image(filename) :
     return cv2.imread(filename)
 
@@ -174,6 +191,7 @@ if __name__ == "__main__":
         basename = os.path.basename(file)
         filename_no_ext = os.path.splitext(basename)[0]
         token = filename_no_ext.split('_')
+        print(input_folder, file, filename_no_ext, token)
         pit_id = int(token[1])
 
         # count the number of images per pit
