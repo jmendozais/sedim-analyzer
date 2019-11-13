@@ -14,8 +14,6 @@ from skimage.measure import label, regionprops
 from skimage.transform import resize
 import time
 
-import matplotlib.pyplot as plt
-
 class SampleTemplate:
     def __init__(self):
         self.roi = None
@@ -180,79 +178,82 @@ def process_img(img, filename, output_folder, pit_id, localizer):
 #===============#
 if __name__ == "__main__":
     # verify input parameters
-    parser = argparse.ArgumentParser('Applies the pre-processing steps to the images')
+    parser = argparse.ArgumentParser('Applies the pre-processing steps to a folder containing subfolders')
     required_named = parser.add_argument_group('required named arguments')
-    required_named.add_argument('-i', '--input_folder', type=str, help='Folder containing the images', required=True)
+    required_named.add_argument('-i', '--input_folder', type=str, help='Folder containing the subfolders with the images', required=True)
     required_named.add_argument('-o', '--output_folder', type=str, help='Output folder', required=True)
 #   parser.add_argument("--num_pits", type=int, default=10, help="Number of pits")
     args = parser.parse_args()
-
-    print("Iniciando preprocesamiento")
-    # T1 : Loop para iniciar el preprocesamiento
-    start = time.time()
 
     # read input parameters
     input_folder = args.input_folder
     output_folder = args.output_folder
 
-    # read the files in the directory
-    files = os.listdir(input_folder)
-    files.sort()
-    files_zip = zip(range(1, len(files)+1), files)
-
     if not os.path.isdir(output_folder):
         os.makedirs(output_folder)
 
-    # process each image
-    n_imgs_per_pit = {}
-    localizer = ROILocalizer()
-    results_list = []
+    print("Procesando folder '{}':".format(input_folder))
+    subfolders = os.listdir(input_folder)
+    subfolders.sort()
+    time_all_folders = 0
 
-    for i, file in files_zip:
-        # read image
-        img = load_image(os.path.join(input_folder, file))
+    for subfolder in subfolders:
+        print("Procesando subfolder '{}':".format(subfolder))
 
-        # split the filename
-        basename = os.path.basename(file)
-        filename_no_ext = os.path.splitext(basename)[0]
+        print("- Iniciando preprocesamiento")
+        # T1 : Loop para iniciar el preprocesamiento
+        start = time.time()
 
-        token = filename_no_ext.split('_')
+        # read the files in the directory
+        files = os.listdir(os.path.join(input_folder, subfolder))
+        files.sort()
+        files_zip = zip(range(1, len(files)+1), files)
 
-        if token != None:
-            pit_id = int(token[1])
-        else:
-            pit_id = -1
+        # process each image
+        n_imgs_per_pit = {}
+        localizer = ROILocalizer()
+        results_list = []
 
-        # count the number of images per pit
-        if not pit_id in n_imgs_per_pit:
-            n_imgs_per_pit[pit_id] = 0
-        n_imgs_per_pit[pit_id] += 1
-        
-        # apply a different procedure according to the number of pit
-        print("Procesando imagen {}/{} ...\r".format(i, len(files)), end="")
-        patches = process_img(img, file, output_folder, pit_id, localizer)
-        results_list.append((file, patches))
+        for i, file in files_zip:
+            # read image
+            img = load_image(os.path.join(input_folder, subfolder, file))
 
-    # T2 : Preprocesamient finalizado
-    total_time = time.time() - start
-    print("Preprocesamiento finalizado: ", total_time)
-    print("Guardando resultados ...")
+            # split the filename
+            basename = os.path.basename(file)
+            filename_no_ext = os.path.splitext(basename)[0]
 
-    # Guardar los resultados
-    save_results(results_list, output_folder)
+            token = filename_no_ext.split('_')
 
+            if token != None:
+                pit_id = int(token[1])
+            else:
+                pit_id = -1
 
-    n_patches = 0
-    print("Reporte: imagenes procesadas por pozo:")
-    for i in range(1, max(n_imgs_per_pit)+1):
-        if i in n_imgs_per_pit:
-            print("Pozo {}: {} imagenes ({} patches creados)".format(i, n_imgs_per_pit[i], n_imgs_per_pit[i]*4))
-            n_patches += n_imgs_per_pit[i]*4
-    print("Patches creados: {}".format(n_patches))
+            # count the number of images per pit
+            if not pit_id in n_imgs_per_pit:
+                n_imgs_per_pit[pit_id] = 0
+            n_imgs_per_pit[pit_id] += 1
+            
+            # apply a different procedure according to the number of pit
+            print(" Procesando imagen {}/{} ...\r".format(i, len(files)), end="")
+            patches = process_img(img, file, output_folder, pit_id, localizer)
+            results_list.append((file, patches))
 
-    output_files = os.listdir(output_folder)
-    for ofile in output_files:
-        #img = load_image(os.path.join(input_folder, ofile))
-        img = np.array(Image.open(os.path.join(output_folder, ofile)))
-        plt.imshow(img)
-        plt.show()
+        # T2 : Preprocesamient finalizado
+        total_time = time.time() - start
+        print("- Preprocesamiento finalizado: {} sec".format(total_time))
+        time_all_folders += total_time
+        print("- Guardando resultados ...")
+
+        # Guardar los resultados
+        save_results(results_list, output_folder)
+
+        n_patches = 0
+        # print("Reporte: images processed by pozo id:")
+        for i in range(1, max(n_imgs_per_pit)+1):
+            if i in n_imgs_per_pit:
+        #         print("Pit {}: {} images (created {} patches)".format(i, n_imgs_per_pit[i], n_imgs_per_pit[i]*4))
+                n_patches += n_imgs_per_pit[i]*4
+        print("- Patches creados: {}".format(n_patches))
+
+    print("Tiempo de procesamiento para todos los subfolders: {} sec".format(time_all_folders))

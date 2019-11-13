@@ -227,7 +227,7 @@ if __name__ == "__main__":
         n_imgs_per_pit[pit_id] += 1
         
         # apply a different procedure according to the number of pit
-        print("Processing image {}/{} ...\r".format(i, len(files)), end="")
+        print("Procesando imagen {}/{} ...\r".format(i, len(files)), end="")
         patches = process_img(img, file, output_folder, pit_id, localizer)
         results_list.append((file, patches))
 
@@ -240,9 +240,9 @@ if __name__ == "__main__":
     save_results(results_list, output_folder)
 
     n_patches = 0
-    print("Reporte: images processed by pozo id:")
+    print("Reporte: imagenes procesadas por pozo:")
     for i in range(1, max(n_imgs_per_pit)+1):
         if i in n_imgs_per_pit:
-            print("Pit {}: {} images (created {} patches)".format(i, n_imgs_per_pit[i], n_imgs_per_pit[i]*4))
+            print("Pozo {}: {} imagenes ({} patches creados)".format(i, n_imgs_per_pit[i], n_imgs_per_pit[i]*4))
             n_patches += n_imgs_per_pit[i]*4
-    print("Patches created: {}".format(n_patches))
+    print("Patches creados: {}".format(n_patches))
