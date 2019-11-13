@@ -14,6 +14,8 @@ from skimage.measure import label, regionprops
 from skimage.transform import resize
 import time
 
+import matplotlib.pyplot as plt
+
 class SampleTemplate:
     def __init__(self):
         self.roi = None
@@ -183,11 +185,13 @@ if __name__ == "__main__":
     required_named.add_argument('-i', '--input_folder', type=str, help='Folder containing the subfolders with the images', required=True)
     required_named.add_argument('-o', '--output_folder', type=str, help='Output folder', required=True)
 #   parser.add_argument("--num_pits", type=int, default=10, help="Number of pits")
+    parser.add_argument("-r", "--visualize_images", action="store_true", default=False, help="Visualize the images")
     args = parser.parse_args()
 
     # read input parameters
     input_folder = args.input_folder
     output_folder = args.output_folder
+    visualize_images = args.visualize_images
 
     if not os.path.isdir(output_folder):
         os.makedirs(output_folder)
@@ -247,6 +251,25 @@ if __name__ == "__main__":
 
         # Guardar los resultados
         save_results(results_list, output_folder)
+
+        # visualizar imagenes
+        if visualize_images:
+            n_rows = len(files)
+            n_cols = 4
+            f, axarr = plt.subplots(n_rows, n_cols, figsize=(5,50))
+            results_list_flat = []
+            for i, result in zip(range(len(results_list)), results_list):
+                _, patches = result
+                axarr[i,0].imshow(patches[0])
+                axarr[i,1].imshow(patches[1])
+                axarr[i,2].imshow(patches[2])
+                axarr[i,3].imshow(patches[3])
+                # axarr[i,0].axis('off')
+                # axarr[i,1].axis('off')
+                # axarr[i,2].axis('off')
+                # axarr[i,3].axis('off')
+            plt.tight_layout()
+            plt.show()
 
         n_patches = 0
         # print("Reporte: images processed by pozo id:")
