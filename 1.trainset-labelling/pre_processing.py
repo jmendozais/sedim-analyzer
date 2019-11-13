@@ -182,8 +182,12 @@ if __name__ == "__main__":
     required_named = parser.add_argument_group('required named arguments')
     required_named.add_argument('-i', '--input_folder', type=str, help='Folder containing the images', required=True)
     required_named.add_argument('-o', '--output_folder', type=str, help='Output folder', required=True)
-#    parser.add_argument("--num_pits", type=int, default=10, help="Number of pits")
+#   parser.add_argument("--num_pits", type=int, default=10, help="Number of pits")
     args = parser.parse_args()
+
+    print("Iniciando preprocesamiento")
+    # T1 : Loop para iniciar el preprocesamiento
+    start = time.time()
 
     # read input parameters
     input_folder = args.input_folder
@@ -201,10 +205,6 @@ if __name__ == "__main__":
     n_imgs_per_pit = {}
     localizer = ROILocalizer()
     results_list = []
-
-    print("Iniciando preprocesamiento")
-    # T1 : Loop para iniciar el preprocesamiento
-    start = time.time()
 
     for i, file in files_zip:
         # read image
