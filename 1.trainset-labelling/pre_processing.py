@@ -105,59 +105,73 @@ def load_image(filename) :
 def save_image(img, filename) :
     cv2.imwrite(filename, img)
 
+def save_results(results, output_folder):
+    for result in results:
+        filename, patches = result
+        basename = os.path.basename(filename)
+        filename_no_ext = os.path.splitext(basename)[0]
+        heigth = img.shape[0]//4
+
+        save_image(patches[0], os.path.join(output_folder, filename_no_ext + "_patch_1.png"))
+        save_image(patches[1], os.path.join(output_folder, filename_no_ext + "_patch_2.png"))
+        save_image(patches[2], os.path.join(output_folder, filename_no_ext + "_patch_3.png"))
+        save_image(patches[3], os.path.join(output_folder, filename_no_ext + "_patch_4.png"))
+
 def split_image(img, filename, output_folder):
-    basename = os.path.basename(filename)
-    filename_no_ext = os.path.splitext(basename)[0]
+    #basename = os.path.basename(filename)
+    #filename_no_ext = os.path.splitext(basename)[0]
 
     heigth = img.shape[0]//4
-    
     img_1 = img[:heigth,:,:]
-    save_image(img_1, os.path.join(output_folder, filename_no_ext + "_patch_1.png"))
+    #save_image(img_1, os.path.join(output_folder, filename_no_ext + "_patch_1.png"))
 
     img_2 = img[heigth:heigth*2,:,:]
-    save_image(img_2, os.path.join(output_folder, filename_no_ext + "_patch_2.png"))
+    #save_image(img_2, os.path.join(output_folder, filename_no_ext + "_patch_2.png"))
 
     img_3 = img[heigth*2:heigth*3,:,:]
-    save_image(img_3, os.path.join(output_folder, filename_no_ext + "_patch_3.png"))
+    #save_image(img_3, os.path.join(output_folder, filename_no_ext + "_patch_3.png"))
 
     img_4 = img[heigth*3:,:,:]
-    save_image(img_4, os.path.join(output_folder, filename_no_ext + "_patch_4.png"))
+    #save_image(img_4, os.path.join(output_folder, filename_no_ext + "_patch_4.png"))
+    return [img_1, img_2, img_3, img_4]
 
 def process_img(img, filename, output_folder, pit_id, localizer):
     if pit_id == 1:
         img = img[:, 50:-50, :]
-        split_image(img, filename, output_folder)
+        patches = split_image(img, filename, output_folder)
     elif pit_id == 2:
         img = img[:, 524:1136, :]
-        split_image(img, filename, output_folder)
+        patches = split_image(img, filename, output_folder)
     elif pit_id == 3:
         img = img[:, 524:1136, :]
-        split_image(img, filename, output_folder)
+        patches = split_image(img, filename, output_folder)
     elif pit_id == 4:
         img = img[352:1938, 122:667, :]
-        split_image(img, filename, output_folder)
+        patches = split_image(img, filename, output_folder)
     elif pit_id == 5:
         img = img[25:2090, 472:1066, :]
-        split_image(img, filename, output_folder)
+        patches = split_image(img, filename, output_folder)
     elif pit_id == 6:
         img = img[31:509, 119:262, :]
-        split_image(img, filename, output_folder)
+        patches = split_image(img, filename, output_folder)
     elif pit_id == 7:
         img = img[70:2060, 458:1050, :]
-        split_image(img, filename, output_folder)
+        patches = split_image(img, filename, output_folder)
     elif pit_id == 8:
         img = img[352:1938, 132:637, :]
-        split_image(img, filename, output_folder)
+        patches = split_image(img, filename, output_folder)
     elif pit_id == 9:
         img = img[45:2075, 551:1135, :]
-        split_image(img, filename, output_folder)
+        patches = split_image(img, filename, output_folder)
     elif pit_id == 10:
         img = img[80:2062, 472:1076, :]
-        split_image(img, filename, output_folder)
+        patches = split_image(img, filename, output_folder)
     else:
         roi = localizer.localize(img)
         img = img[roi[0]:roi[2],roi[1]:roi[3]]
-        split_image(img, filename, output_folder)
+        patches = split_image(img, filename, output_folder)
+
+    return patches
 
 #===============#
 # main function
@@ -186,31 +200,47 @@ if __name__ == "__main__":
     # process each image
     n_imgs_per_pit = {}
     localizer = ROILocalizer()
+    results_list = []
+
+    print("Iniciando preprocesamiento")
+    # T1 : Loop para iniciar el preprocesamiento
+    start = time.time()
+
     for i, file in files_zip:
+        # read image
+        img = load_image(os.path.join(input_folder, file))
+
         # split the filename
         basename = os.path.basename(file)
         filename_no_ext = os.path.splitext(basename)[0]
+
         token = filename_no_ext.split('_')
-        print(input_folder, file, filename_no_ext, token)
-        pit_id = int(token[1])
+
+        if token != None:
+            pit_id = int(token[1])
+        else:
+            pit_id = -1
 
         # count the number of images per pit
         if not pit_id in n_imgs_per_pit:
             n_imgs_per_pit[pit_id] = 0
         n_imgs_per_pit[pit_id] += 1
-
-        # read image
-        img = load_image(os.path.join(input_folder, file))
         
         # apply a different procedure according to the number of pit
         print("Processing image {}/{} ...\r".format(i, len(files)), end="")
-        process_img(img, file, output_folder, pit_id, localizer)
-    # print("Processing image {}/{} ...".format(len(files)+1, len(files)+1))
-    print()
+        patches = process_img(img, file, output_folder, pit_id, localizer)
+        results_list.append((file, patches))
 
-    # print results summary
+    # T2 : Preprocesamient finalizado
+    total_time = time.time() - start
+    print("Preprocesamiento finalizado: ", total_time)
+    print("Guardando resultados ...")
+
+    # Guardar los resultados
+    save_results(results_list, output_folder)
+
     n_patches = 0
-    print("Images processed by pit:")
+    print("Reporte: images processed by pozo id:")
     for i in range(1, max(n_imgs_per_pit)+1):
         if i in n_imgs_per_pit:
             print("Pit {}: {} images (created {} patches)".format(i, n_imgs_per_pit[i], n_imgs_per_pit[i]*4))
