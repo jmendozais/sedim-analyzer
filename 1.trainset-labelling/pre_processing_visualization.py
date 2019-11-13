@@ -252,6 +252,7 @@ if __name__ == "__main__":
 
     output_files = os.listdir(output_folder)
     for ofile in output_files:
-        img = load_image(os.path.join(input_folder, ofile))
+        #img = load_image(os.path.join(input_folder, ofile))
+        img = np.array(Image.open(os.path.join(output_folder, ofile)))
         plt.imshow(img)
         plt.show()
