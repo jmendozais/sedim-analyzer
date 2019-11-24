@@ -100,7 +100,7 @@ class ElasticTransform:
 #=============================#
 # function to train the model
 #=============================#
-def train_model(model, phases, loss_function, optimizer, scheduler, n_epochs=100):
+def train_model(model, phases, loss_function, optimizer, scheduler, n_epochs):
     since = time.time()
 
     best_model_wts = copy.deepcopy(model.state_dict())
@@ -182,6 +182,9 @@ def train_model(model, phases, loss_function, optimizer, scheduler, n_epochs=100
                 best_kappa = epoch_kappa
                 best_acc = epoch_acc.item()
                 best_model_wts = copy.deepcopy(model.state_dict())
+        
+        # scheduler step (after train/val phases)
+        scheduler.step()
 
     time_elapsed = time.time() - since
     print('Training completed in {:.0f}m {:.0f}s'.format(time_elapsed // 60, time_elapsed % 60))
@@ -235,7 +238,7 @@ def define_loss_function(loss_func_name):
 #===========================================================================#
 # function to define the optimizer given its name and the chosen train mode
 #===========================================================================#
-def define_optimizer(optimizer_name, model, train_mode, learn_rate=0.001):
+def define_optimizer(optimizer_name, model, train_mode, learn_rate):
     # for transfer-learning and rnd-weights training modes we optimize all the parameters in the network
     if train_mode in ['transfer-learning','rnd-weights','rnd-weights-full-img-size']:
         optm_params = 'model.parameters()'
@@ -267,7 +270,7 @@ def define_data_transformations(data_augmentation, train_mode, img_dir_df):
             img_size_h.append(img.shape[0])
             img_size_w.append(img.shape[1])
         target_size = [int(np.mean(img_size_h)), int(np.mean(img_size_w))]
-        print("- input size for the network: {}".format(target_size))
+    print("- input size for the network: {}".format(target_size))
 
     # define the mean and stdev values for normalization
     if train_mode in ['transfer-learning','fixed-feats']:
@@ -335,7 +338,7 @@ class MyDataset(Dataset):
         self.targets = factor[0]
         self.labels = factor[1]
         self.transform = transform
-        
+
     def __getitem__(self, index):
         # Load actual image here
         x = Image.open(self.image_paths[index])
@@ -448,14 +451,15 @@ if __name__ == "__main__":
         image_datasets = {x: MyDataset(data_frames[x], data_transforms[x]) for x in img_subset_names}
 
         # load the train and eval sets in batches
-        dataloaders = {x: torch.utils.data.DataLoader(dataset=image_datasets[x], batch_size=batch_size, shuffle=True, num_workers=4) for x in img_subset_names}
+        dataloaders = {x: torch.utils.data.DataLoader(dataset=image_datasets[x], batch_size=batch_size, shuffle=False, num_workers=4) for x in img_subset_names}
         dataset_sizes = {x: len(image_datasets[x]) for x in img_subset_names}
         class_names = image_datasets[train_set_name].labels
         n_classes = len(class_names)
         for x in img_subset_names:
             print("- {} set: {} images".format(x, dataset_sizes[x]))
+        print("- n_classes: {}".format(n_classes))
 
-        # print(collections.Counter(image_datasets[train_set_name].targets))
+        print(collections.Counter(image_datasets[train_set_name].targets))
 
         # load the model
         pre_trained = "True" if train_mode in ['transfer-learning','fixed-feats'] else "False"
