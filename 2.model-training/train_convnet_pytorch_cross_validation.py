@@ -100,7 +100,7 @@ class ElasticTransform:
 #=============================#
 # function to train the model
 #=============================#
-def train_model(model, phases, loss_function, optimizer, scheduler, n_epochs):
+def train_model(model, phases, loss_function, optimizer, scheduler, n_epochs, n_folds, fold_num):
     since = time.time()
 
     best_model_wts = copy.deepcopy(model.state_dict())
@@ -111,11 +111,11 @@ def train_model(model, phases, loss_function, optimizer, scheduler, n_epochs):
     for phase in phases:
         results_json[phase] = dict()
         results_json[phase]['loss'] = list()
-        results_json[phase]['kappa'] = list()
+        # results_json[phase]['kappa'] = list()
         results_json[phase]['acc'] = list()
 
     for epoch in range(n_epochs):
-        print('Epoch {}/{}'.format(epoch+1, n_epochs))
+        print('Epoch {}/{} (fold {}/{})'.format(epoch+1, n_epochs, fold_num, n_folds))
 
         # Each epoch has a training and validation phase
         for phase in img_subset_names:
@@ -173,7 +173,7 @@ def train_model(model, phases, loss_function, optimizer, scheduler, n_epochs):
             print('\n- [{}] Loss: {:.4f}, Kappa: {:.4f}, Acc: {:.4f}'.format(phase, epoch_loss, epoch_kappa, epoch_acc))
 
             results_json[phase]['loss'].append(epoch_loss)
-            results_json[phase]['kappa'].append(epoch_kappa)
+            # results_json[phase]['kappa'].append(epoch_kappa)
             results_json[phase]['acc'].append(epoch_acc.item())
 
             # deep copy the model
@@ -190,7 +190,7 @@ def train_model(model, phases, loss_function, optimizer, scheduler, n_epochs):
     print('Training completed in {:.0f}m {:.0f}s'.format(time_elapsed // 60, time_elapsed % 60))
     print('Best from eval -> Kappa: {:4f}, Acc: {:4f}'.format(best_kappa, best_acc))
 
-    results_json['best_eval_kappa'] = best_kappa
+    # results_json['best_eval_kappa'] = best_kappa
     results_json['best_eval_acc'] = best_acc
     results_json['train_time'] = time_elapsed
 
@@ -438,13 +438,13 @@ if __name__ == "__main__":
     image_dataset = MyDataset(data_frame)
     print("- dataset: {} images".format(len(image_dataset)))
     image_datasets = {}
-    i, best_acc_folds, best_kapp_folds = 0, 0, 0
+    fold_num, best_acc_folds, best_kapp_folds = 1, 0, 0
     init_time = time.time()
 
     skf = StratifiedKFold(n_splits=n_folds)
     # for train_idx, eval_idx in k_folds(n_splits=n_folds, subjects=len(image_dataset), frames=1):
     for train_idx, eval_idx in skf.split(image_dataset.image_paths, image_dataset.targets):
-        print("\n-> Processing Fold {} ...".format(i+1))
+        print("\n-> Processing Fold {} ...".format(fold_num+1))
         # create the train/eval datasets using the folds
         indices = {train_set_name: train_idx, eval_set_name: eval_idx}
         data_frames = {x: data_frame.iloc[indices[x]] for x in img_subset_names}
@@ -486,7 +486,7 @@ if __name__ == "__main__":
         scheduler = lr_scheduler.StepLR(optimizer, step_size=7, gamma=0.1)
 
         # train the model
-        model, train_results = train_model(model, [train_set_name,eval_set_name], loss_function, optimizer, scheduler, n_epochs)
+        model, train_results = train_model(model, [train_set_name,eval_set_name], loss_function, optimizer, scheduler, n_epochs, n_folds, fold_num)
 
         # save results for the current fold
         results_json = dict()
@@ -507,17 +507,17 @@ if __name__ == "__main__":
         results_json['output_suffix'] = output_suffix
         results_json['train_results'] = train_results
 
-        results_filename = os.path.join(output_dirname, "results_{}_fold_{}.json".format(output_suffix, i+1))
+        results_filename = os.path.join(output_dirname, "results_{}_fold_{}.json".format(output_suffix, fold_num+1))
         fp = open(results_filename, 'w')
         json.dump(results_json, fp, sort_keys=False, indent=4)
 
         # save the best model
         if train_results['best_eval_acc'] > best_acc_folds:
             best_acc_folds = train_results['best_eval_acc']
-            best_kappa_folds = train_results['best_eval_kappa']
+            # best_kappa_folds = train_results['best_eval_kappa']
             best_model_folds = copy.deepcopy(model.state_dict())
 
-        i += 1
+        fold_num += 1
 
     # print best results
     time_elapsed = time.time() - init_time
