@@ -97,34 +97,6 @@ class ElasticTransform:
     def __call__(self, sample):
         return self.elastic_transform(sample, self.alpha, self.sigma)
 
-#=======================================#
-# functions to perform cross-validation
-#=======================================#
-# distribution of the folds
-def partitions(number, k):
-    n_partitions = np.ones(k) * int(number/k)
-    n_partitions[0:(number % k)] += 1
-    return n_partitions
-
-# indices of the set eval
-def get_indices(n_splits = 3, subjects = 145, frames = 20):
-    l = partitions(subjects, n_splits)
-    fold_sizes = l * frames
-    indices = np.arange(subjects * frames).astype(int)
-    current = 0
-    for fold_size in fold_sizes:
-        start = current
-        stop =  current + fold_size
-        current = stop
-        yield(indices[int(start):int(stop)])
-
-# generates folds for cross validation
-def k_folds(n_splits = 3, subjects = 145, frames = 20):
-    indices = np.arange(subjects * frames).astype(int)
-    for eval_idx in get_indices(n_splits, subjects, frames):
-        train_idx = np.setdiff1d(indices, eval_idx)
-        yield train_idx, eval_idx
-
 #=============================#
 # function to train the model
 #=============================#
@@ -208,7 +180,7 @@ def train_model(model, phases, loss_function, optimizer, scheduler, n_epochs=100
             # if (phase == eval_set_name) and (epoch_kappa > best_kappa or (epoch_kappa == best_kappa and epoch_acc > best_acc)):
             if (phase == eval_set_name) and epoch_acc > best_acc:
                 best_kappa = epoch_kappa
-                best_acc = epoch_acc
+                best_acc = epoch_acc.item()
                 best_model_wts = copy.deepcopy(model.state_dict())
 
     time_elapsed = time.time() - since
@@ -216,7 +188,7 @@ def train_model(model, phases, loss_function, optimizer, scheduler, n_epochs=100
     print('Best from eval -> Kappa: {:4f}, Acc: {:4f}'.format(best_kappa, best_acc))
 
     results_json['best_eval_kappa'] = best_kappa
-    results_json['best_eval_acc'] = best_acc.item()
+    results_json['best_eval_acc'] = best_acc
     results_json['train_time'] = time_elapsed
 
     # load best model weights
@@ -289,12 +261,13 @@ def define_data_transformations(data_augmentation, train_mode, img_dir_df):
         target_size = [224, 224]
     elif train_mode == 'rnd-weights-full-img-size':
         # get the mean size of the images
-        sizes = []
-        for img in img_dir_df:
-            img = Image.open(img)
-            sizes.append((img.shape[0]+img.shape[1])/2.0)
-        target_size = np.mean(sizes)
-        target_size = [target_size, target_size]
+        img_size_h, img_size_w = [], []
+        for i in range(len(img_dir_df)):
+            img = np.array(Image.open(img_dir_df.iloc[i,0]))
+            img_size_h.append(img.shape[0])
+            img_size_w.append(img.shape[1])
+        target_size = [int(np.mean(img_size_h)), int(np.mean(img_size_w))]
+        print("- input size for the network: {}".format(target_size))
 
     # define the mean and stdev values for normalization
     if train_mode in ['transfer-learning','fixed-feats']:
@@ -352,7 +325,9 @@ def define_data_transformations(data_augmentation, train_mode, img_dir_df):
     
     return data_transforms
 
-
+#=======================================#
+# class to represent the image dataset
+#=======================================#
 class MyDataset(Dataset):
     def __init__(self, data_frame, transform=None):
         self.image_paths = list(data_frame.iloc[:,0])
@@ -372,7 +347,6 @@ class MyDataset(Dataset):
     
     def __len__(self):
         return len(self.image_paths)
-
 
 #===============#
 # main function
@@ -481,13 +455,7 @@ if __name__ == "__main__":
         for x in img_subset_names:
             print("- {} set: {} images".format(x, dataset_sizes[x]))
 
-        ###
-        l = [os.path.splitext(os.path.basename(x))[0] for x in image_datasets[train_set_name].image_paths]
-        # print(*l, sep=", ")
-        # print(image_datasets[train_set_name].targets)
-        # print(image_datasets[train_set_name].targets)
-        print(collections.Counter(image_datasets[train_set_name].targets))
-        ###
+        # print(collections.Counter(image_datasets[train_set_name].targets))
 
         # load the model
         pre_trained = "True" if train_mode in ['transfer-learning','fixed-feats'] else "False"
