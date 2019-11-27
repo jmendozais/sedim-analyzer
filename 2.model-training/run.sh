@@ -4,7 +4,6 @@
 
 #python train.py -d dataset -s skfold_5 -o results --n_epochs 20 --train_mode fixed-feats --model_name densenet201 --learning_rate=0.0001 
 
-#BEST SO FART
 epoch_budget=30
 model=densenet121 #densenet201
 
