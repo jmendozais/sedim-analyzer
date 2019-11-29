@@ -21,12 +21,11 @@ model=densenet121 #densenet201
 
 #python train.py -d dataset -s skfold_5 -o results --n_epochs $epoch_budget --train_mode fixed-feats --model_name $model --learning_rate=0.001 --data_augmentation advanced >"${model}_lr0.001_fixed_feats_ep${epoch_budget}_dataaug.txt"
 
-#python train.py -d dataset -s skfold_5 -o results --n_epochs $epoch_budget --train_mode transfer-learning --model_name $model --learning_rate=0.001 --data_augmentation advanced >"${model}_lr0.001_unfreeze_all_ep${epoch_budget}_dataaug.txt"
-
+# mean ACC 0.579
 #python train.py -d dataset -s skfold_5 -o results --n_epochs $epoch_budget --train_mode transfer-learning --model_name $model --learning_rate=0.0001 --data_augmentation advanced >"${model}_lr0.0001_unfreeze_all_ep${epoch_budget}_dataaug.txt"
-
+#python train.py -d dataset -s skfold_5 -o results --n_epochs $epoch_budget --train_mode transfer-learning --model_name $model --learning_rate=0.001 --data_augmentation advanced >"${model}_lr0.001_unfreeze_all_ep${epoch_budget}_dataaug.txt"
 #python train.py -d dataset -s skfold_5 -o results --n_epochs $epoch_budget --train_mode transfer-learning --model_name $model --learning_rate=0.01 --data_augmentation advanced >"${model}_lr0.01_unfreeze_all_ep${epoch_budget}_dataaug.txt"
 
-
+# mean acc 0.55
 model=resnet152 #densenet201
 python train.py -d dataset -s skfold_5 -o results --n_epochs $epoch_budget --train_mode transfer-learning --model_name $model --learning_rate=0.0001 >"${model}_lr0.0001_unfreeze_allparams_ep$epoch_budget.txt"
