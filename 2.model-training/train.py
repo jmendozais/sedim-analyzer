@@ -40,6 +40,15 @@ from torch.utils.data import Dataset
 from torch.utils.data import DataLoader
 from torchvision.utils import save_image
 
+# Reproducibility
+'''
+TEST IF RUNNING TIME CHANGES
+import numpy as np
+torch.backends.cudnn.deterministic = True
+torch.backends.cudnn.benchmark = False
+np.random.seed(389)
+torch.manual_seed(389)
+'''
 
 #from albumentations.augmentations.transforms import ElasticTransform
 
@@ -363,6 +372,34 @@ def define_data_transformations(data_augmentation, train_mode, img_dir_df):
                 transforms.Normalize(norm_mean, norm_stdev)
             ]),
         }
+    elif data_augmentation == 'advanced2':
+        padding = int(target_size[0]*0.1)
+        data_transforms = {
+            # Data augmentation and normalization for training
+            train_set_name: transforms.Compose([
+                transforms.ColorJitter(
+                    brightness=0.1,
+                    contrast=0.1,
+                    saturation=0.1,
+                    hue=0.1),
+                transforms.Pad((padding, padding, padding, padding), padding_mode='reflect'),
+                transforms.RandomAffine(degrees=10, 
+                                        translate=(0.05, 0.05), 
+                                        #scale=(1.1, 1.25),# Scaling produce ambiguity
+                                        fillcolor=(0,0,0), resample=Image.BICUBIC),
+                transforms.CenterCrop(target_size),
+                transforms.RandomHorizontalFlip(),
+                ElasticTransform(alpha=1200, sigma=10), # Strong elastic transform may produce ambiguity
+                transforms.ToTensor(),
+                transforms.Normalize(norm_mean, norm_stdev)
+            ]),
+            # Just normalization for validation
+            eval_set_name: transforms.Compose([
+                transforms.ToTensor(),
+                transforms.Normalize(norm_mean, norm_stdev)
+            ]),
+        }
+ 
     
     return data_transforms, target_size
 
