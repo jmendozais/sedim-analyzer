@@ -570,7 +570,7 @@ if __name__ == "__main__":
     #image_dataset = MyDataset(data_frame)
     #print("- dataset: {} images".format(len(image_dataset)))
     image_datasets = {}
-    fold_num, avg_acc_folds, avg_kappa_folds = 1, 0, 0 #best_acc_folds, best_kapp_folds = 1, 0, 0
+    fold_num, avg_acc_folds, avg_kappa_folds = 1, [], [] #best_acc_folds, best_kapp_folds = 1, 0, 0
     init_time = time.time()
 
     folds = kfold.load_folds_as_dataframes(args.split_dir)
@@ -651,8 +651,8 @@ if __name__ == "__main__":
         fp = open(results_filename, 'w')
         json.dump(results_json, fp, sort_keys=False, indent=4)
         
-        avg_acc_folds += train_results['best_eval_acc']
-        avg_kappa_folds += train_results['best_eval_kappa']
+        avg_acc_folds.append(train_results['best_eval_acc'])
+        avg_kappa_folds.append(train_results['best_eval_kappa'])
 
         # We keep all fold models for evaluation without training (Optional)
         model_filename = os.path.join(output_dirname, "model_f{}_{}.model".format(fold_num, output_suffix))
@@ -674,11 +674,12 @@ if __name__ == "__main__":
 
     # print best results
     time_elapsed = time.time() - init_time
+    print("="*60)
     print('Cross-validation completed in {:.0f}m {:.0f}s'.format(time_elapsed // 60, time_elapsed % 60))
-
-    avg_acc_folds/=n_folds
-    avg_kappa_folds/=n_folds
-    print('Average metrics from eval in all folds -> Accuracy: {:4f}, Kappa: {:4f}'.format(avg_acc_folds, avg_kappa_folds))
+    print('Average metrics from eval in all folds:')
+    print('- Accuracy: {:4f} +- {:4f}'.format(np.mean(avg_acc_folds), np.std(avg_acc_folds)))
+    print('- Kappa: {:4f} +- {:4f}'.format(np.mean(avg_kappa_folds), np.std(avg_kappa_folds)))
+    print("="*60)
     
     # Instead we keep all fold models for evaluation without training.
     #save the best PyTorch model
