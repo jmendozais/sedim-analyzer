@@ -677,8 +677,8 @@ if __name__ == "__main__":
     print("="*60)
     print('Cross-validation completed in {:.0f}m {:.0f}s'.format(time_elapsed // 60, time_elapsed % 60))
     print('Average metrics from eval in all folds:')
-    print('- Accuracy: {:4f} +- {:4f}'.format(np.mean(avg_acc_folds), np.std(avg_acc_folds)))
-    print('- Kappa: {:4f} +- {:4f}'.format(np.mean(avg_kappa_folds), np.std(avg_kappa_folds)))
+    print('- Accuracy: {:.6f} +- {:.6f}'.format(np.mean(avg_acc_folds), np.std(avg_acc_folds)))
+    print('- Kappa: {:.6f} +- {:.6f}'.format(np.mean(avg_kappa_folds), np.std(avg_kappa_folds)))
     print("="*60)
     
     # Instead we keep all fold models for evaluation without training.
