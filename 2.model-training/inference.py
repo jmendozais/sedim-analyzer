@@ -59,6 +59,33 @@ torch.manual_seed(389)
 
 #from albumentations.augmentations.transforms import ElasticTransform
 
+#===============================================#
+# function to load the model given a model name
+#===============================================#
+def load_model(model_name, pretrained):
+    model = format('models.%s(pretrained=%s)' % (model_name, pretrained))
+    model = eval(model)
+
+    return model
+
+#=========================================================================#
+# function to update the classification layer given the number of classes
+#=========================================================================#
+def update_classification_layer(model, n_classes):
+    model_name = model.__class__.__name__
+    if model_name in ['AlexNet','VGG']:
+        n_feats = model.classifier[6].in_features
+        model.classifier[6] = nn.Linear(n_feats, n_classes)
+    if model_name == 'ResNet':
+        n_feats = model.fc.in_features
+        model.fc = nn.Linear(n_feats, n_classes)
+    if model_name == 'SqueezeNet':
+        model.classifier[1] = nn.Conv2D(512, n_classes, kernel_size=(1,1), stride=(1,1))
+    if model_name == 'DenseNet':
+        n_feats = model.classifier.in_features
+        model.classifier = nn.Linear(n_feats, n_classes)
+    return model
+
 def split_input(image, target_size):
     width, height = image.size
     patches = []
@@ -137,10 +164,14 @@ if __name__ == "__main__":
 
     required_named = parser.add_argument_group('required named arguments')
     required_named.add_argument('-i', '--input_dir', type=str, help='Path directory with the input images', required=True)
-    required_named.add_argument('-m', '--model_file', type=str, help='Path to the model checkpoint', required=True)
+    required_named.add_argument('-m', '--model_file', type=str, help='Path to the model checkpoint (PyTorch state dict)', required=True)
     required_named.add_argument('-o', '--output_file', type=str, help='Path to the output file', required=True)
 
     parser.add_argument("--torch_device", type=str, default="cuda:0", help="Device to execute the tests ('cpu','cuda:0','cuda:1',etc)")
+    parser.add_argument("--model_type", type=str, default="state-dict", help="Format in which the model was saved", choices=["state-dict","full-model"])
+    parser.add_argument("--model_name", type=str, default="densenet161", help="Name of the model used for training (use only when model_type='state-dict')", choices=['alexnet','vgg11','vgg13','vgg16','vgg19',
+        'resnet18', 'resnet34','resnet50','resnet101','resnet152','squeezenet1_0','squeezenet1_1','densenet121','densenet161','densenet169','densenet201'])
+    parser.add_argument("--n_classes", type=int, default=9, help="Number of classes present in the trained model (use only when model_type='state-dict')")
 
     args = parser.parse_args()
 
@@ -160,6 +191,8 @@ if __name__ == "__main__":
     t_inference = []
 
     # load input folder
+    t_load = time.time()
+    print("-> Cargando las imagenes a la memoria ...")
     files = os.listdir(args.input_dir)
     files.sort()
 
@@ -168,14 +201,23 @@ if __name__ == "__main__":
     for i in range(num_imgs):
         img = cv2.imread(os.path.join(args.input_dir, files[i]))
         imgs.append(img)
+    print("Tiempo:", time.time() - t_load)
 
     # Load model
+    print("-> Cargando el modelo a la memoria ...")
     t_load = time.time()
-    model = torch.load(args.model_file)
+    if args.model_type == "state-dict":
+        model = load_model(args.model_name, pretrained='False')
+        model = update_classification_layer(model, args.n_classes)
+        model = model.to(device)
+        model.load_state_dict(torch.load(args.model_file, map_location=device))
+    elif args.model_type == "full-model":
+        model = torch.load(args.model_file, map_location=device)
     model.eval()
-    print("[Adicional] Tiempo de carga del modelo a memoria:", time.time() - t_load)
+    print("Tiempo:", time.time() - t_load)
 
     # First timer
+    print("-> Classificando las imagenes ... ")
     t1_inicio = time.time()
 
     # define the data transformations
@@ -200,15 +242,13 @@ if __name__ == "__main__":
         # Keep time after evaluation
         t_inference.append(time.time())
     
-    print("Tiempo total:", time.time() - t1_inicio)
     t_verf = 0
     for i in range(num_imgs):
         t_verf += t2[i] - t_aux[i]
-    print("Tiempo de verificacion (preprocesamiento):", t_verf)
     t_eval = 0
     for i in range(num_imgs):
         t_eval += t_inference[i] - t2[i]
-    print("[Adicional] Tiempo de total de evaluacion del modelo (inferencia):", t_eval)
+    print("Tiempo total: {} (pre-procesamiento: {} e inferencia: {})".format(time.time() - t1_inicio, t_verf, t_eval))
 
     # Save results
     save_results(files, results, args.output_file)
