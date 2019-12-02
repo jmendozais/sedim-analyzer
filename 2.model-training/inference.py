@@ -170,8 +170,10 @@ if __name__ == "__main__":
         imgs.append(img)
 
     # Load model
+    t_load = time.time()
     model = torch.load(args.model_file)
     model.eval()
+    print("[Adicional] Tiempo de carga del modelo a memoria:", time.time() - t_load)
 
     # First timer
     t1_inicio = time.time()
