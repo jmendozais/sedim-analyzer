@@ -1,0 +1,33 @@
+{
+    "input_dataset": "dataset_skfold_5",
+    "img_subset_names": [
+        "train",
+        "eval"
+    ],
+    "n_samples_per_set": {
+        "train": 2520,
+        "eval": 0
+    },
+    "n_classes": 9,
+    "model_name": "densenet121",
+    "loss_func_name": "CrossEntropyLoss",
+    "optimizer_name": "Adam",
+    "train_mode": "transfer-learning",
+    "batch_size": 32,
+    "n_epochs": 1,
+    "learning_rate": 0.0001,
+    "output_suffix": "convnet",
+    "train_results": {
+        "train": {
+            "loss": [
+                1.3697753092599294
+            ],
+            "acc": [
+                0.49404761904761907
+            ]
+        },
+        "train_time": 81.07939147949219,
+        "best_train_acc": 0.49404761904761907,
+        "best_train_kappa": 0.4278319425061031
+    }
+}

@@ -139,6 +139,18 @@ def process_img(img, pit_id, localizer):
 
     return img
 
+def get_well_id_from_filename(filename):
+    basename = os.path.basename(filename)
+    filename_no_ext = os.path.splitext(basename)[0]
+
+    token = filename_no_ext.split('_')
+    if token != None:
+        pit_id = int(token[1])
+    else:
+        pit_id = -1
+    return pit_id
+ 
+
 #===============#
 # main function
 #===============#
@@ -177,15 +189,7 @@ if __name__ == "__main__":
         img = load_image(os.path.join(input_folder, file))
 
         # split the filename
-        basename = os.path.basename(file)
-        filename_no_ext = os.path.splitext(basename)[0]
-
-        token = filename_no_ext.split('_')
-
-        if token != None:
-            pit_id = int(token[1])
-        else:
-            pit_id = -1
+        pit_id = get_well_id_from_filename(file)
 
         # count the number of images per pit
         if not pit_id in n_imgs_per_pit:

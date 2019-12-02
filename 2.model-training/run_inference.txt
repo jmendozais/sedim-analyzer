@@ -1,0 +1,1 @@
+python inference.py --input_dir 'example_test_set' --model_file 'densenet121_lr0.0001_unfreeze_all_ep1_dataaug_complete/model_convnet_complete.model' --output_file 'example_output.csv'

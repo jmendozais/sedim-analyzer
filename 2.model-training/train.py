@@ -42,7 +42,7 @@ from torchvision.utils import save_image
 
 # Reproducibility
 '''
-TEST IF RUNNING TIME CHANGES
+TEST IF ACC TIME CHANGES
 import numpy as np
 torch.backends.cudnn.deterministic = True
 torch.backends.cudnn.benchmark = False
@@ -74,6 +74,7 @@ class SampleCropResize:
         image = image.resize(self.target_size)
         
         return image, label[part_idx.numpy()[0]]
+
 
 #=============================#
 # class for data augmentation
@@ -114,7 +115,6 @@ class ElasticTransform:
 # function to train the model
 #=============================#
 def train_model(model, phases, loss_function, optimizer, scheduler, n_epochs, n_folds, fold_num):
-
     since = time.time()
 
     best_model_wts = copy.deepcopy(model.state_dict())
@@ -132,7 +132,7 @@ def train_model(model, phases, loss_function, optimizer, scheduler, n_epochs, n_
         print('Epoch {}/{} (fold {}/{})'.format(epoch+1, n_epochs, fold_num, n_folds))
 
         # Each epoch has a training and validation phase
-        for phase in img_subset_names:
+        for phase in phases:
             if phase == train_set_name:
                 # scheduler.step()
                 model.train()  # Set model to training mode
@@ -190,31 +190,47 @@ def train_model(model, phases, loss_function, optimizer, scheduler, n_epochs, n_
             results_json[phase]['acc'].append(epoch_acc.item())
 
             # deep copy the model
-            # if (phase == eval_set_name) and (epoch_kappa > best_kappa or (epoch_kappa == best_kappa and epoch_acc > best_acc)):
-            if phase == eval_set_name:
+            if eval_set_name in phases:
+                # If its running on model selection mode
+                if phase == eval_set_name:
+                    cm = metrics.confusion_matrix(all_labels, all_preds)
+                    print("Model selection")
+                    print(cm)
+                if (phase == eval_set_name) and epoch_acc > best_acc:
+                    best_kappa = epoch_kappa
+                    best_acc = epoch_acc.item()
+                    best_model_wts = copy.deepcopy(model.state_dict())
+            else:
+                # If its running on model evaluation mode (all data)
                 cm = metrics.confusion_matrix(all_labels, all_preds)
+                print("Model evaluation")
                 print(cm)
-                
+                if epoch_acc > best_acc:
+                    best_kappa = epoch_kappa
+                    best_acc = epoch_acc.item()
+                    best_model_wts = copy.deepcopy(model.state_dict())
+ 
 
-            if (phase == eval_set_name) and epoch_acc > best_acc:
-                best_kappa = epoch_kappa
-                best_acc = epoch_acc.item()
-                best_model_wts = copy.deepcopy(model.state_dict())
         
         # scheduler step (after train/val phases)
         scheduler.step()
 
     time_elapsed = time.time() - since
     print('Training completed in {:.0f}m {:.0f}s'.format(time_elapsed // 60, time_elapsed % 60))
-    print('Best from eval -> Kappa: {:4f}, Acc: {:4f}'.format(best_kappa, best_acc))
-
-    # results_json['best_eval_kappa'] = best_kappa
-    results_json['best_eval_acc'] = best_acc
-    results_json['best_eval_kappa'] = best_kappa
     results_json['train_time'] = time_elapsed
 
+    if eval_set_name in phases:
+        print('Best from eval -> Kappa: {:4f}, Acc: {:4f}'.format(best_kappa, best_acc))
+        results_json['best_eval_acc'] = best_acc
+        results_json['best_eval_kappa'] = best_kappa
+    else:
+        print('Best from train phase (For the final model) -> Kappa: {:4f}, Acc: {:4f}'.format(best_kappa, best_acc))
+        results_json['best_train_acc'] = best_acc
+        results_json['best_train_kappa'] = best_kappa
+ 
     # load best model weights
     model.load_state_dict(best_model_wts)
+
     return model, results_json
 
 
@@ -484,9 +500,9 @@ if __name__ == "__main__":
     required_named.add_argument('-d', '--dataset_dir', type=str, help='Path to the preprocessed dataset')
     required_named.add_argument('-s', '--split_dir', type=str, help='CSV containing the image set and labels (two columns)',
         required=True)
-    required_named.add_argument('-o', '--output_dir_basename', type=str, help='Basename for the output folder', required=True)
+    required_named.add_argument('-o', '--output_dir', type=str, help='Basename for the output', required=True)
 
-
+    parser.add_argument('--model_evaluation', dest='model_evaluation', action='store_true') # if True a model is trained with all data, otherwise kfold is performed
     parser.add_argument("--model_name", type=str, default="alexnet", help="Pre-trainned conv network to be used", choices=['alexnet','vgg11','vgg13','vgg16','vgg19',
         'resnet18', 'resnet34','resnet50','resnet101','resnet152','squeezenet1_0','squeezenet1_1','densenet121','densenet161','densenet169','densenet201'])
 
@@ -512,7 +528,6 @@ if __name__ == "__main__":
     args = parser.parse_args()
 
     # read input parameters
-    output_dir_basename = args.output_dir_basename.rstrip('/')
     model_name = args.model_name
     loss_func_name = args.loss_func_name
     optimizer_name = args.optimizer_name
@@ -528,7 +543,7 @@ if __name__ == "__main__":
     print("Input parameters:")
     print("dataset_dir: {}".format(args.dataset_dir))
     print("split_dir: {}".format(args.split_dir))
-    print("output_dir_basename: {}".format(output_dir_basename))
+    print("output_dir_basename: {}".format(args.output_dir))
     print("model_name: {}".format(model_name))
     print("loss_func_name: {}".format(loss_func_name))
     print("optimizer_name: {}".format(optimizer_name))
@@ -542,9 +557,8 @@ if __name__ == "__main__":
     print()
 
     # create the output folder
-    output_dirname = output_dir_basename + '_' + model_name + '_' + loss_func_name + '_' + optimizer_name + '_' + train_mode + '_epochs_' + str(args.n_epochs)
-    if not os.path.exists(output_dirname):
-        os.makedirs(output_dirname)
+    if not os.path.exists(args.output_dir):
+        os.makedirs(args.output_dir)
 
     # define the names for the image subsets
     img_subset_names = ["train", "eval"]
@@ -560,45 +574,29 @@ if __name__ == "__main__":
         torch.cuda.empty_cache()
 
     # define the data transformations
-    #data_frame = pd.read_csv(input_dataset, delimiter=',', header=0)
     data_transforms, target_size = define_data_transformations(data_augmentation, train_mode, None)
     train_patch_sampler = SampleCropResize(target_size)
-    #TODO: eval_sampler = SampleRegularCropResize(target_size)
 
-    # perform cross-validation
-    print("-> Performing cross validation ...")
-    #image_dataset = MyDataset(data_frame)
-    #print("- dataset: {} images".format(len(image_dataset)))
-    image_datasets = {}
-    fold_num, avg_acc_folds, avg_kappa_folds = 1, 0, 0 #best_acc_folds, best_kapp_folds = 1, 0, 0
-    init_time = time.time()
-
-    folds = kfold.load_folds_as_dataframes(args.split_dir)
-    n_folds = len(folds)
-    for train_dataframe, test_dataframe in folds:
-        print(train_dataframe.shape, test_dataframe.shape)
-        print("\n-> Processing Fold {} ...".format(fold_num))
-
-        # create the train/eval datasets using the folds
-        #indices = {train_set_name: train_idx, eval_set_name: eval_idx}
-        data_frames = {train_set_name: train_dataframe, eval_set_name: test_dataframe}
-        image_datasets = {x: MyDataset(args.dataset_dir, data_frames[x], train_patch_sampler, data_transforms[x]) for x in img_subset_names}
+    if args.model_evaluation:
+        init_time = time.time()
+        folds = kfold.load_folds_as_dataframes(args.split_dir)
+        complete_dataframe = pd.concat(folds[0])
+        dataset = MyDataset(args.dataset_dir, complete_dataframe, train_patch_sampler, data_transforms[train_set_name]) 
 
         # load the train and eval sets in batches
-        num_classes = len(image_datasets[train_set_name].class_labels)
+        num_classes = len(dataset.class_labels)
         assert num_classes == 9
-        weight_sets = {x: torch.DoubleTensor(make_weights_for_balanced_classes(image_datasets[x].labels, num_classes)) for x in img_subset_names}
-        weighted_samplers = {x: torch.utils.data.sampler.WeightedRandomSampler(weight_sets[x], len(weight_sets[x])) for x in img_subset_names}
 
-        dataloaders = {x: torch.utils.data.DataLoader(dataset=image_datasets[x], batch_size=batch_size, sampler=weighted_samplers[x], num_workers=4) for x in img_subset_names}
+        weight_set = torch.DoubleTensor(make_weights_for_balanced_classes(dataset.labels, num_classes)) 
+        weighted_sampler = torch.utils.data.sampler.WeightedRandomSampler(weight_set, len(weight_set)) 
+        dataloaders = {train_set_name: torch.utils.data.DataLoader(dataset=dataset, batch_size=batch_size, sampler=weighted_sampler, num_workers=4),
+            eval_set_name: None}
 
-        dataset_sizes = {x: len(image_datasets[x]) for x in img_subset_names}
-        class_names = image_datasets[train_set_name].class_labels
-        n_classes = len(class_names)
+        dataset_sizes = {train_set_name: len(dataset), eval_set_name: 0}
+        n_classes = len(dataset.class_labels)
         for x in img_subset_names:
-            print("- {} set: {} images".format(x, dataset_sizes[x]))
-        print("- n_classes: {}".format(n_classes))
-        print(collections.Counter(image_datasets[train_set_name].labels))
+                print("- {} set: {} images".format(x, dataset_sizes[x]))
+        print("n_classes: {}".format(n_classes))
 
         # load the model
         pre_trained = "True" if train_mode in ['transfer-learning','fixed-feats'] else "False"
@@ -625,8 +623,7 @@ if __name__ == "__main__":
         scheduler = lr_scheduler.StepLR(optimizer, step_size=7, gamma=0.1)
 
         # train the model
-        model, train_results = train_model(model, [train_set_name,eval_set_name], loss_function, optimizer, scheduler, n_epochs, n_folds, fold_num)
-
+        model, train_results = train_model(model, [train_set_name], loss_function, optimizer, scheduler, n_epochs, 1, 1)
 
         # save results for the current fold
         results_json = dict()
@@ -643,45 +640,131 @@ if __name__ == "__main__":
         results_json['batch_size'] = batch_size
         results_json['n_epochs'] = n_epochs
         results_json['learning_rate'] = learning_rate
-        results_json['output_dir_basename'] = output_dir_basename
         results_json['output_suffix'] = output_suffix
         results_json['train_results'] = train_results
 
-        results_filename = os.path.join(output_dirname, "results_{}_fold_{}.json".format(output_suffix, fold_num))
+        results_filename = os.path.join(args.output_dir, "results_{}_complete.json".format(output_suffix))
         fp = open(results_filename, 'w')
         json.dump(results_json, fp, sort_keys=False, indent=4)
         
-        avg_acc_folds += train_results['best_eval_acc']
-        avg_kappa_folds += train_results['best_eval_kappa']
+        model_filename = os.path.join(args.output_dir, "model_{}_complete.model".format(output_suffix))
+        torch.save(model, model_filename)
 
-        # We keep all fold models for evaluation without training (Optional)
-        model_filename = os.path.join(output_dirname, "model_f{}_{}.model".format(fold_num, output_suffix))
-        torch.save(model.state_dict(), model_filename)
+    else:
+        print("-> Performing cross validation ...")
+        image_datasets = {}
+        fold_num, avg_acc_folds, avg_kappa_folds = 1, 0, 0 
+        init_time = time.time()
+
+        folds = kfold.load_folds_as_dataframes(args.split_dir)
+        n_folds = len(folds)
+        for train_dataframe, test_dataframe in folds:
+            print(train_dataframe.shape, test_dataframe.shape)
+            print("\n-> Processing Fold {} ...".format(fold_num))
+
+            # create the train/eval datasets using the folds
+            #indices = {train_set_name: train_idx, eval_set_name: eval_idx}
+            data_frames = {train_set_name: train_dataframe, eval_set_name: test_dataframe}
+            image_datasets = {x: MyDataset(args.dataset_dir, data_frames[x], train_patch_sampler, data_transforms[x]) for x in img_subset_names}
+
+            # load the train and eval sets in batches
+            num_classes = len(image_datasets[train_set_name].class_labels)
+            assert num_classes == 9
+            weight_sets = {x: torch.DoubleTensor(make_weights_for_balanced_classes(image_datasets[x].labels, num_classes)) for x in img_subset_names}
+            weighted_samplers = {x: torch.utils.data.sampler.WeightedRandomSampler(weight_sets[x], len(weight_sets[x])) for x in img_subset_names}
+
+            dataloaders = {x: torch.utils.data.DataLoader(dataset=image_datasets[x], batch_size=batch_size, sampler=weighted_samplers[x], num_workers=4) for x in img_subset_names}
+
+            dataset_sizes = {x: len(image_datasets[x]) for x in img_subset_names}
+            class_names = image_datasets[train_set_name].class_labels
+            n_classes = len(class_names)
+            for x in img_subset_names:
+                print("- {} set: {} images".format(x, dataset_sizes[x]))
+            print("- n_classes: {}".format(n_classes))
+            print(collections.Counter(image_datasets[train_set_name].labels))
+
+            # load the model
+            pre_trained = "True" if train_mode in ['transfer-learning','fixed-feats'] else "False"
+            model = load_model(model_name, pre_trained)
+            
+            # fix the layers (only for fixed-feats training mode)
+            if train_mode == 'fixed-feats':
+                for param in model.parameters():
+                    param.requires_grad = False
+
+            # update the classification layer to have the right number of classes
+            model = update_classification_layer(model, n_classes)
+
+            # copy the model to the chosen device
+            model = model.to(device)
+
+            # define the loss function
+            loss_function = define_loss_function(loss_func_name)
+
+            # define optimizer
+            optimizer = define_optimizer(optimizer_name, model, train_mode, learning_rate=learning_rate)
+
+            # decay learning_rate by a factor of 0.1 every 7 epochs
+            scheduler = lr_scheduler.StepLR(optimizer, step_size=7, gamma=0.1)
+
+            # train the model
+            model, train_results = train_model(model, [train_set_name,eval_set_name], loss_function, optimizer, scheduler, n_epochs, n_folds, fold_num)
 
 
-        ''' Why it keeps the best model over all folds? As I understand that CV is used to 
-        select the best parameters, is not the final model trained with all the data?
-        '''
-        '''
-        # save the best model
-        if train_results['best_eval_acc'] > best_acc_folds:
-            best_acc_folds = train_results['best_eval_acc']
-            # best_kappa_folds = train_results['best_eval_kappa']
-            best_model_folds = copy.deepcopy(model.state_dict())
-        '''
+            # save results for the current fold
+            results_json = dict()
+            results_json['input_dataset'] = args.dataset_dir + "_" + args.split_dir
+            results_json['img_subset_names'] = img_subset_names
+            results_json['n_samples_per_set'] = dict()
+            for subset_name in img_subset_names:
+                results_json['n_samples_per_set'][subset_name] = dataset_sizes[subset_name]
+            results_json['n_classes'] = n_classes
+            results_json['model_name'] = model_name
+            results_json['loss_func_name'] = loss_func_name
+            results_json['optimizer_name'] = optimizer_name
+            results_json['train_mode'] = train_mode
+            results_json['batch_size'] = batch_size
+            results_json['n_epochs'] = n_epochs
+            results_json['learning_rate'] = learning_rate
+            results_json['output_suffix'] = output_suffix
+            results_json['train_results'] = train_results
 
-        fold_num += 1
+            results_filename = os.path.join(args.output_dir, "results_{}_fold_{}.json".format(output_suffix, fold_num))
+            fp = open(results_filename, 'w')
+            json.dump(results_json, fp, sort_keys=False, indent=4)
+            
+            avg_acc_folds += train_results['best_eval_acc']
+            avg_kappa_folds += train_results['best_eval_kappa']
 
-    # print best results
-    time_elapsed = time.time() - init_time
-    print('Cross-validation completed in {:.0f}m {:.0f}s'.format(time_elapsed // 60, time_elapsed % 60))
+            # We keep all fold models for evaluation without training (Optional)
+            model_filename = os.path.join(args.output_dir, "model_f{}_{}.model".format(fold_num, output_suffix))
+            torch.save(model, model_filename)
 
-    avg_acc_folds/=n_folds
-    avg_kappa_folds/=n_folds
-    print('Average metrics from eval in all folds -> Accuracy: {:4f}, Kappa: {:4f}'.format(avg_acc_folds, avg_kappa_folds))
-    
-    # Instead we keep all fold models for evaluation without training.
-    #save the best PyTorch model
-    #model.load_state_dict(best_model_folds)
-    #torch.save(model.state_dict(), model_filename)
-    #print("Best model saved in '{}".format(model_filename))
+
+            ''' Why it keeps the best model over all folds? As I understand that CV is used to 
+            select the best parameters, is not the final model trained with all the data?
+            '''
+            '''
+            # save the best model
+            if train_results['best_eval_acc'] > best_acc_folds:
+                best_acc_folds = train_results['best_eval_acc']
+                # best_kappa_folds = train_results['best_eval_kappa']
+                best_model_folds = copy.deepcopy(model.state_dict())
+            '''
+
+            fold_num += 1
+
+        # print best results
+        time_elapsed = time.time() - init_time
+        print('Cross-validation completed in {:.0f}m {:.0f}s'.format(time_elapsed // 60, time_elapsed % 60))
+
+        avg_acc_folds/=n_folds
+        avg_kappa_folds/=n_folds
+        print('Average metrics from eval in all folds -> Accuracy: {:4f}, Kappa: {:4f}'.format(avg_acc_folds, avg_kappa_folds))
+
+        
+        # Instead we keep all fold models for evaluation without training.
+        #save the best PyTorch model
+        #model.load_state_dict(best_model_folds)
+        #torch.save(model.state_dict(), model_filename)
+        #print("Best model saved in '{}".format(model_filename))
