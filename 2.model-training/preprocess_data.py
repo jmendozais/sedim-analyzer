@@ -149,27 +149,15 @@ def get_well_id_from_filename(filename):
     else:
         pit_id = -1
     return pit_id
- 
 
-#===============#
-# main function
-#===============#
-if __name__ == "__main__":
-    # verify input parameters
-    parser = argparse.ArgumentParser('Applies the pre-processing steps to the images')
-    required_named = parser.add_argument_group('required named arguments')
-    required_named.add_argument('-i', '--input_folder', type=str, help='Folder containing the images', required=True)
-    required_named.add_argument('-o', '--output_folder', type=str, help='Output folder', required=True)
-#   parser.add_argument("--num_pits", type=int, default=10, help="Number of pits")
-    args = parser.parse_args()
 
+#===============================================#
+# Function to be called from outside the script
+#===============================================#
+def preprocess_data(input_folder, output_folder):
     print("Iniciando preprocesamiento")
     # T1 : Loop para iniciar el preprocesamiento
     start = time.time()
-
-    # read input parameters
-    input_folder = args.input_folder
-    output_folder = args.output_folder
 
     # read the files in the directory
     files = os.listdir(input_folder)
@@ -216,3 +204,23 @@ if __name__ == "__main__":
         total += n_imgs_per_pit[pozo_id]
     print("Imagenes creadas: {}".format(total))
     assert total == len(files)
+
+#===============#
+# main function
+#===============#
+if __name__ == "__main__":
+    # verify input parameters
+    parser = argparse.ArgumentParser('Applies the pre-processing steps to the images')
+    required_named = parser.add_argument_group('required named arguments')
+    required_named.add_argument('-i', '--input_folder', type=str, help='Folder containing the images', required=True)
+    required_named.add_argument('-o', '--output_folder', type=str, help='Output folder', required=True)
+#   parser.add_argument("--num_pits", type=int, default=10, help="Number of pits")
+    args = parser.parse_args()
+
+    # read input parameters
+    input_folder = args.input_folder
+    output_folder = args.output_folder
+
+    # execute the pre-processing procedure
+    preprocess_data(input_folder, output_folder)
+    

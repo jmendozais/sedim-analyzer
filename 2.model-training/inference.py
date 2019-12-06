@@ -120,9 +120,11 @@ def inference(model, image):
     output = model(input)
     _, preds = torch.max(output, 1)
     preds = preds.cpu().detach().numpy()
-    return preds
+    output = output.data.cpu().numpy()
 
-def save_results(files, results, output_file):
+    return preds, output
+
+def save_results(files, results, output_file_csv):
     assert len(files) == len(results)
     results_array = [["Nombre de archivo", "0-25% de la imagen", "25-50% de la imagen", "50-75% de la imagen", "75-100% de la imagen"]]
     classes = ['Arcilla','Muy fino', 'Fino',
@@ -134,7 +136,7 @@ def save_results(files, results, output_file):
         results_array.append([files[i], classes[results[i][0]], classes[results[i][1]], classes[results[i][2]], classes[results[i][3]]])
 
     #print(np.array(results_array))
-    with open(output_file,'w') as result_file:
+    with open(output_file_csv,'w') as result_file:
         wr = csv.writer(result_file, dialect='excel')
         wr.writerows(results_array)
 
@@ -143,7 +145,7 @@ def save_results(files, results, output_file):
     '''
     '''
     # xlsx does not work with deepo docker image
-    writer = pd.ExcelWriter(output_file + '.xlsx', engine='xlsxwriter')
+    writer = pd.ExcelWriter(output_file_csv + '.xlsx', engine='xlsxwriter')
     df_results = pd.DataFrame(results_array)
     df_results.to_excel(writer, sheet_name='Sheet1')
     writer.save()
@@ -151,35 +153,37 @@ def save_results(files, results, output_file):
     '''
     # openpyxls does not work with deepo docker image
     df_results = pd.DataFrame(results_array)
-    df_results.to_excel(output_file + '.xlsx')
+    df_results.to_excel(output_file_csv + '.xlsx')
     '''
 
-#===============#
-# main function
-#===============#
-if __name__ == "__main__":
-    # verify input parameters
-    parser = argparse.ArgumentParser('Trains a convnet with PyTorch models using Cross Validation strategy')
+def save_results_json(files, results, probabilities, t_eval, output_file_json):
+    assert len(files) == len(results)
+    results_dict = {}
+    long_names = ["0-25% de la imagen", "25-50% de la imagen", "50-75% de la imagen", "75-100% de la imagen"]
+    classes = sorted(['Arcilla','Muy fino', 'Fino', 'Grueso', 'Granulo o mayor', 'Medio', 'Muy grueso', 'Limo', 'no'])
+    results_dict["classes"] = classes
 
+    for i in range(len(files)):
+        results_dict[files[i]] = {}
+        for p in [1,2,3,4]:
+            results_dict[files[i]]["patch_"+str(p)] = {}
+            results_dict[files[i]]["patch_"+str(p)]["long_name"] = long_names[p-1]
+            results_dict[files[i]]["patch_"+str(p)]["prediction"] = classes[results[i][p-1]]
+            results_dict[files[i]]["patch_"+str(p)]["probabilities"] = [x/100.0 for x in probabilities[i][p-1].tolist()]
+        results_dict[files[i]]["total_proc_time"] = t_eval
 
-    required_named = parser.add_argument_group('required named arguments')
-    required_named.add_argument('-i', '--input_dir', type=str, help='Path directory with the input images', required=True)
-    required_named.add_argument('-m', '--model_file', type=str, help='Path to the model checkpoint (PyTorch state dict)', required=True)
-    required_named.add_argument('-o', '--output_file', type=str, help='Path to the output file', required=True)
+    result_file = open(output_file_json, 'w')
+    json.dump(results_dict, result_file, sort_keys=True, indent=4)
 
-    parser.add_argument("--torch_device", type=str, default="cuda:0", help="Device to execute the tests ('cpu','cuda:0','cuda:1',etc)")
-    parser.add_argument("--model_type", type=str, default="state-dict", help="Format in which the model was saved", choices=["state-dict","full-model"])
-    parser.add_argument("--model_name", type=str, default="densenet161", help="Name of the model used for training (use only when model_type='state-dict')", choices=['alexnet','vgg11','vgg13','vgg16','vgg19',
-        'resnet18', 'resnet34','resnet50','resnet101','resnet152','squeezenet1_0','squeezenet1_1','densenet121','densenet161','densenet169','densenet201'])
-    parser.add_argument("--n_classes", type=int, default=9, help="Number of classes present in the trained model (use only when model_type='state-dict')")
-
-    args = parser.parse_args()
-
+#===============================================#
+# Function to be called from outside the script
+#===============================================#
+def perform_inference(input_dir, model_file, output_file_csv, output_file_json="", torch_device="cuda:0", model_type="state-dict", model_name="densenet161", n_classes=9):
     # determine the torch device to be used (GPU device)
-    if args.torch_device != "cpu" and not torch.cuda.is_available():
+    if torch_device != "cpu" and not torch.cuda.is_available():
         print("CUDA is not available ... using CPU instead!")
-        args.torch_device = "cpu"
-    device = torch.device(args.torch_device)
+        torch_device = "cpu"
+    device = torch.device(torch_device)
     if torch.cuda.is_available():
         torch.cuda.empty_cache()
 
@@ -193,26 +197,26 @@ if __name__ == "__main__":
     # load input folder
     t_load = time.time()
     print("-> Cargando las imagenes a la memoria ...")
-    files = os.listdir(args.input_dir)
+    files = os.listdir(input_dir)
     files.sort()
 
     num_imgs = len(files)
     imgs = []
     for i in range(num_imgs):
-        img = cv2.imread(os.path.join(args.input_dir, files[i]))
+        img = cv2.imread(os.path.join(input_dir, files[i]))
         imgs.append(img)
     print("Tiempo:", time.time() - t_load)
 
     # Load model
     print("-> Cargando el modelo a la memoria ...")
     t_load = time.time()
-    if args.model_type == "state-dict":
-        model = load_model(args.model_name, pretrained='False')
-        model = update_classification_layer(model, args.n_classes)
+    if model_type == "state-dict":
+        model = load_model(model_name, pretrained='False')
+        model = update_classification_layer(model, n_classes)
         model = model.to(device)
-        model.load_state_dict(torch.load(args.model_file, map_location=device))
-    elif args.model_type == "full-model":
-        model = torch.load(args.model_file, map_location=device)
+        model.load_state_dict(torch.load(model_file, map_location=device))
+    elif model_type == "full-model":
+        model = torch.load(model_file, map_location=device)
     model.eval()
     print("Tiempo:", time.time() - t_load)
 
@@ -224,7 +228,7 @@ if __name__ == "__main__":
     localizer = preprocess_data.ROILocalizer()
 
     #print("Tiempo para carga de componentes del modelo:", time.time() - t_loadm)
-    results = []
+    results, probabilities = [], []
     for i in range(num_imgs):
         # Keep time before preprocessing
         t_aux.append(time.time())
@@ -236,8 +240,9 @@ if __name__ == "__main__":
 
         # Keep time after preprocessing
         t2.append(time.time())
-        result = inference(model, preproc_img)
-        results.append(result)
+        classes, probs = inference(model, preproc_img)
+        results.append(classes)
+        probabilities.append(probs)
 
         # Keep time after evaluation
         t_inference.append(time.time())
@@ -251,4 +256,39 @@ if __name__ == "__main__":
     print("Tiempo total: {} (pre-procesamiento: {} e inferencia: {})".format(time.time() - t1_inicio, t_verf, t_eval))
 
     # Save results
-    save_results(files, results, args.output_file)
+    save_results(files, results, output_file_csv)
+    if output_file_json != "":
+        save_results_json(files, results, probabilities, t_eval, output_file_json)
+
+#===============#
+# main function
+#===============#
+if __name__ == "__main__":
+    # verify input parameters
+    parser = argparse.ArgumentParser('Trains a convnet with PyTorch models using Cross Validation strategy')
+
+
+    required_named = parser.add_argument_group('required named arguments')
+    required_named.add_argument('-i', '--input_dir', type=str, help='Path directory with the input images', required=True)
+    required_named.add_argument('-m', '--model_file', type=str, help='Path to the model checkpoint (PyTorch state dict)', required=True)
+    required_named.add_argument('-o', '--output_file_csv', type=str, help='Path to the output file', required=True)
+
+    parser.add_argument("--output_file_json", type=str, default="", help="Path to the output JSON file (containing detailed info)")
+    parser.add_argument("--torch_device", type=str, default="cuda:0", help="Device to execute the tests ('cpu','cuda:0','cuda:1',etc)")
+    parser.add_argument("--model_type", type=str, default="state-dict", help="Format in which the model was saved", choices=["state-dict","full-model"])
+    parser.add_argument("--model_name", type=str, default="densenet161", help="Name of the model used for training (use only when model_type='state-dict')", choices=['alexnet','vgg11','vgg13','vgg16','vgg19',
+        'resnet18', 'resnet34','resnet50','resnet101','resnet152','squeezenet1_0','squeezenet1_1','densenet121','densenet161','densenet169','densenet201'])
+    parser.add_argument("--n_classes", type=int, default=9, help="Number of classes present in the trained model (use only when model_type='state-dict')")
+
+    args = parser.parse_args()
+    input_dir = args.input_dir
+    model_file = args.model_file
+    output_file_csv = args.output_file_csv
+    output_file_json = args.output_file_json
+    torch_device = args.torch_device
+    model_type = args.model_type
+    model_name = args.model_name
+    n_classes = args.n_classes
+
+    # execute the main inference function
+    perform_inference(input_dir, model_file, output_file_csv, output_file_json, torch_device, model_type, model_name, n_classes)
