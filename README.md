@@ -1,5 +1,6 @@
 # sedim-analyzer
-Detection and Classification of Sedimentological Images, 2019.
+Detection and Classification of Sedimentological Images. 
+Presented at "Concurso Innovate 2019", organized by Ecopetrol and UNIRED. 
 
 Collaborators:
 - Cesar Castelo (cesar.castelo@gmail.com)
